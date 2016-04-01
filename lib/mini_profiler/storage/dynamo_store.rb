@@ -6,58 +6,67 @@ module Rack
       class DynamoCleanupThread < Thread
       end
 
-      class DynamoCache
-        def initialize(path, prefix)
-          @path = path
-          @prefix = prefix
-        end
-
-        #todo remove
-        def [](key)
-        end
-
-        #todo remove
-        def []=(key,val)
-        end
-
-        private
-        if RUBY_PLATFORM =~ /mswin(?!ce)|mingw|cygwin|bccwin/
-          def path(key)
-            @path + '/' + @prefix  + '_' + key.gsub(/:/, '_')
-          end
-        else
-          def path(key)
-            @path + '/' + @prefix  + '_' + key
-          end
-        end
-      end
+#      class DynamoCache
+#        def initialize(path, prefix)
+#          @path = path
+#          @prefix = prefix || 'MiniProfilerDynomoStore'
+#        end
+#
+#        #todo remove
+#        def [](key)
+#        end
+#
+#        #todo remove
+#        def []=(key,val)
+#        end
+#
+#        private
+#        if RUBY_PLATFORM =~ /mswin(?!ce)|mingw|cygwin|bccwin/
+#          def path(key)
+#            @path + '/' + @prefix  + '_' + key.gsub(/:/, '_')
+#          end
+#        else
+#          def path(key)
+#            @path + '/' + @prefix  + '_' + key
+#          end
+#        end
+#      end
 
       EXPIRES_IN_SECONDS = 60 * 60 * 24
 
       def initialize(args = nil)
         require 'aws-sdk' unless defined? Aws
         args ||= {}
-        @table_name = args[:table_name] || 'MiniProfiler'
-        @client = args[:client]
-        create_table unless table_exists?
+        @mp_item_table = args[:table_name] || 'MPItems'
+        @mp_view_table = args[:table_name] || 'MPViews'
+        @prefix = args[:prefix] || 'MiniProfilerDynomoStore'
+        @dynamo = args[:client]
+        create_tables
         @expires_in_seconds = args[:expires_in] || EXPIRES_IN_SECONDS
       end
 
-      def table_exists?
-        @client.describe_table({table_name: @table_name}).successful?
+      def table_exists? table_name
+        @dynamo.describe_table({table_name: table_name}).successful?
       rescue Aws::DynamoDB::Errors::ResourceNotFoundException
         #ignore table doesn't exist
       end
 
-      def create_table
-        @client.create_table({
+      def create_tables
+        create_table @mp_item_table
+        create_table @mp_view_table
+      end
+
+      def create_table table_name
+        return true if table_exists? table_name
+
+        @dynamo.create_table({
           attribute_definitions: [ # required
             {
               attribute_name: 'id', # required
               attribute_type: 'S', # required, accepts S, N, B
             }
           ],
-          table_name: @table_name, # required
+          table_name: table_name, # required
           key_schema: [ # required
             {
               attribute_name: 'id', # required
@@ -72,49 +81,70 @@ module Rack
       end
 
       def save(page_struct)
-        @client.put_item(
-          table_name: @table_name,
+        @dynamo.put_item(
+          table_name: @mp_item_table,
           item: {
-            'id' => page_struct[:id],
-            'data' => Marshal::dump(page_struct).force_encoding('ISO-8859-1').encode('UTF-8')
+            'id' => prefixed(page_struct[:id]),
+            'content' => Marshal::dump(page_struct).force_encoding('ISO-8859-1').encode('UTF-8')
           }
         )
       end
 
       def load(id)
-        result =  @client.get_item({
-          table_name: @table_name,
+        result =  @dynamo.get_item({
+          table_name: @mp_item_table,
           key: {
-            'id' => id
+            'id' => prefixed(id)
           }
         }).item
 
-        Marshal::load(result['data'].encode('ISO-8859-1')) if result
+        Marshal::load(result['content'].encode('ISO-8859-1')) if result
       end
 
       def set_unviewed(user, id)
-        @user_view_lock.synchronize {
-          current = @user_view_cache[user]
-          current = [] unless Array === current
-          current << id
-          @user_view_cache[user] = current.uniq
-        }
+        #TODO need to be doing updates rather than adds/deletes I think
+        puts "putting #{prefixed(user)}-v - content: #{id}"
+        #old_result = @dynamodb.update_item(
+        #      :update_expression => update_exp,
+        #      :condition_expression => condition_exp,
+        #      :expression_attribute_values => exp_attribute_values,
+        #      :table_name => "ProductCatalog",
+        #      :key => { :Id => key_id },
+        #      :return_values => "ALL_OLD",
+        #    ).data.attributes
+        #
+        #puts @dynamo.get_item({table_name: @mp_view_table, key: {id: "#{prefixed(user)}-v"}}).item['id']
+        @dynamo.update_item({
+          table_name: @mp_view_table,
+          condition_expression: nil,
+          update_expression: "ADD entry :entry",
+          expression_attribute_values: {":entry" => Set.new([id])},
+          key: {id: "#{prefixed(user)}-v"}
+          #item: {
+          #  'id' => "#{prefixed(user)}-v",
+          #  'content' => id
+          #}
+        })
       end
 
       def set_viewed(user, id)
-        @user_view_lock.synchronize {
-          @user_view_cache[user] ||= []
-          current = @user_view_cache[user]
-          current = [] unless Array === current
-          current.delete(id)
-          @user_view_cache[user] = current.uniq
-        }
+        @dynamo.update_item({
+          table_name: @mp_view_table,
+          condition_expression: nil,
+          update_expression: "DELETE entry :entry",
+          expression_attribute_values: {":entry" => Set.new([id])},
+          key: {id: "#{prefixed(user)}-v"}
+        })
+      rescue => e
+        puts e
+        puts e.backtrace()
+        puts e.message
+        raise e
       end
 
       def get_unviewed_ids(user)
-        @user_view_lock.synchronize {
-          @user_view_cache[user]
-        }
+        @dynamo.get_item({table_name: @mp_view_table, key: {id: "#{prefixed(user)}-v"}}).item['entry'].to_a
+        #puts @dynamo.get_item({table_name: @mp_view_table, key: {id: "#{prefixed(user)}-v"}}).item['content']
       end
 
       def cleanup_cache
@@ -133,6 +163,11 @@ module Rack
         }
       end
 
+      private
+
+      def prefixed(object)
+        "#{@prefix}-#{object}"
+      end
     end
   end
 end

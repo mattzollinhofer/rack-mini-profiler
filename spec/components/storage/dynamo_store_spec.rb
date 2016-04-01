@@ -30,6 +30,9 @@ describe Rack::MiniProfiler::DynamoStore do
   context 'page struct' do
     let(:store)  { Rack::MiniProfiler::DynamoStore.new(client: client) }
 
+    before do
+      store.
+    end
     describe 'storage' do
 
       it 'can store a PageStruct and retrieve it' do
@@ -42,19 +45,22 @@ describe Rack::MiniProfiler::DynamoStore do
         page_struct[:id].should == "XYZ"
       end
 
-      xit 'can list unviewed items for a user' do
-        @store.set_unviewed('a', 'XYZ')
-        @store.set_unviewed('a', 'ABC')
-        @store.get_unviewed_ids('a').length.should == 2
-        @store.get_unviewed_ids('a').include?('XYZ').should be_true
-        @store.get_unviewed_ids('a').include?('ABC').should be_true
+      it 'can list unviewed items for a user' do
+        store.set_unviewed('a', 'XYZ')
+        store.set_unviewed('a', 'ABC')
+        require 'byebug'
+        byebug
+        store.get_unviewed_ids('a').length.should == 2
+        puts 'asdfasdf'
+        #store.get_unviewed_ids('a').include?('XYZ').should be_true
+        #store.get_unviewed_ids('a').include?('ABC').should be_true
       end
 
-      xit 'can set an item to viewed once it is unviewed' do
-        @store.set_unviewed('a', 'XYZ')
-        @store.set_unviewed('a', 'ABC')
-        @store.set_viewed('a', 'XYZ')
-        @store.get_unviewed_ids('a').should == ['ABC']
+      it 'can set an item to viewed once it is unviewed' do
+        store.set_unviewed('a', 'XYZ')
+        store.set_unviewed('a', 'ABC')
+        store.set_viewed('a', 'XYZ')
+        #store.get_unviewed_ids('a').should == ['ABC']
       end
 
     end

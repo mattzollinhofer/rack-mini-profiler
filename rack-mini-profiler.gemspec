@@ -23,6 +23,7 @@ Gem::Specification.new do |s|
     s.add_runtime_dependency 'json', '>= 1.6'
   end
 
+  s.add_development_dependency 'json', '1.8.3'
   s.add_development_dependency 'rake'
   s.add_development_dependency 'rack-test'
   s.add_development_dependency 'activerecord', '~> 3.0'
@@ -31,6 +32,8 @@ Gem::Specification.new do |s|
   s.add_development_dependency 'ZenTest'
   s.add_development_dependency 'autotest'
   s.add_development_dependency 'redis'
+  s.add_development_dependency 'aws-sdk'
+  s.add_development_dependency 'byebug'
   s.add_development_dependency 'therubyracer'
   s.add_development_dependency 'less'
   s.add_development_dependency 'flamegraph'
